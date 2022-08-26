@@ -1,0 +1,6 @@
+shared.defaultArtifactId=ministratego
+shared.defaultClassPrefix=MiniStratego
+shared.defaultGroupId=org.metaborg
+shared.defaultPackageId=mb.ministratego
+shared.defaultVersion=0.1.0
+stratego.languageStrategyAffix=ministratego

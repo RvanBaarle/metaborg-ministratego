@@ -1,0 +1,27 @@
+module mstr/terms
+
+imports
+  mstr/identifiers
+  mstr/constants
+
+context-free sorts Var Wld
+context-free syntax
+  Var.Var = ID
+  Wld.Wld = "_"
+
+context-free sorts Term // term without annotations
+context-free syntax
+
+  Term         = Var
+  Term         = Wld
+
+  Term.Int       = Int
+  Term.Str       = String
+  Term.ListNil   = <[]>
+  Term.ListCons  = <[<Term>|<Term>]>
+  Term.Op        = <<ID>(<{Term ", "}*>)>
+  Term.Explode   = <<Term>#(<Term>)>
+  Term.TermAs    = <<Var>@<Term>>
+
+context-free priorities
+  Term.Explode > Term.TermAs

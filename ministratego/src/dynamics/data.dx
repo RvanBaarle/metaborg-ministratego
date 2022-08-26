@@ -1,0 +1,68 @@
+module dynamics/data
+
+imports
+  dynamics/stdlib
+  
+  signatures/entry-sig
+  
+// term representation
+rules
+  termStr :: @cval -> Pluggable(@cval)
+  termStr(x) = #record-new([
+    str('"type"), str('"STRING"),
+    str('"value"), x
+  ])
+  
+  termInt :: @cval -> Pluggable(@cval)
+  termInt(x) = #record-new([
+    str('"type"), str('"INT"),
+    str('"value"), x
+  ])
+  
+  termCons :: @cval * @cval -> Pluggable(@cval)
+  termCons(name, args) = #record-new([
+    str('"type"), str('"CONS"),
+    str('"name"), name,
+    str('"args"), args
+  ])
+  
+  termList :: @cval -> Pluggable(@cval)
+  termList(els) = #record-new([
+    str('"type"), str('"LIST"),
+    str('"elements"), els
+  ])
+  
+// conditionals
+rules
+  isType :: 'string * @cval * @cval * @cval -> @cexp
+  isType(ty, val, ifTrue, ifFalse) = {
+    type <- #record-read(val, str('"type"))
+    if #str-eq(type, str(ty)) then {
+      ifTrue@([])
+    } else {
+      ifFalse@([])
+    }
+  }
+
+  isTermString :: @cval * @cval * @cval -> @cexp
+  isTermString(val, ifTrue, ifFalse) = isType('"STRING", val, ifTrue, ifFalse)
+  
+  isTermInt :: @cval * @cval * @cval -> @cexp
+  isTermInt(val, ifTrue, ifFalse) = isType('"INT", val, ifTrue, ifFalse)
+  
+  isTermCons :: @cval * @cval * @cval -> @cexp
+  isTermCons(val, ifTrue, ifFalse) = isType('"CONS", val, ifTrue, ifFalse)
+  
+  isTermConsWithName :: @cval * @cval * @cval * @cval -> @cexp
+  isTermConsWithName(val, name, ifTrue, ifFalse) = {
+    isTermCons(val, after, ifFalse) label after/0:
+    cons <- #record-read(val, str('"name"))
+    if #str-eq(cons, name) then { 
+      ifTrue@([])
+    } else {
+      ifFalse@([])
+    }
+  }
+  
+  isTermList :: @cval * @cval * @cval -> @cexp
+  isTermList(val, ifTrue, ifFalse) = isType('"LIST", val, ifTrue, ifFalse)

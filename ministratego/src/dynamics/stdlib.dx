@@ -1,0 +1,44 @@
+module dynamics/stdlib
+
+signature
+  primitives
+    expression #exit()
+    
+    conditional #int-eq(@cval, @cval)
+    conditional #int-neq(@cval, @cval)
+    conditional #int-leq(@cval, @cval)
+    conditional #int-geq(@cval, @cval)
+    conditional #int-lt(@cval, @cval)
+    conditional #int-gt(@cval, @cval)
+    
+    conditional #str-eq(@cval, @cval)
+    conditional #str-neq(@cval, @cval)
+    
+    conditional #term-eq(@cval, @cval)
+    
+    value #print(@cval)
+    
+    value #int-neg(@cval)
+    value #int-add(@cval, @cval)
+    value #int-sub(@cval, @cval)
+    value #int-mul(@cval, @cval)
+    value #int-div(@cval, @cval)
+    
+    value #str-add(@cval, @cval)
+    value #str-index(@cval, @cval)
+    value #str-length(@cval)
+    
+    value #record-new(List(@cval))
+    value #record-read(@cval, @cval)
+    value #record-write(@cval, @cval, @cval)
+    
+    value #ref-new(@cval)
+    value #ref-fetch(@cval)
+    value #ref-store(@cval, @cval)
+    
+    value #array-new(List(@cval))
+    value #array-read(@cval, @cval)
+    value #array-write(@cval, @cval, @cval)
+    value #array-length(@cval)
+    value #array-concat(@cval, @cval)
+    value #array-tail(@cval)

@@ -1,0 +1,129 @@
+module main
+
+imports
+  signatures/entry-sig
+
+signature
+  sorts TYPE
+  constructors
+    TERM : TYPE
+    STRATEGY : TYPE
+
+  relations
+    type : ID -> TYPE
+    
+  name-resolution labels
+    G P A
+    
+rules
+  // lookup var in current scope or parent scopes
+  lookupVar : scope * ID -> list((path * (ID * TYPE)))
+  lookupVar(s, x) = ps :-
+    query type filter (P | A | G)* and { x' :- x == x' } min $ < P and true in s |-> ps.
+    
+  // resolve var to the given ID
+  resolveVar : scope * ID -> TYPE
+  resolveVar(s, x) = T :- {x'}
+    lookupVar(s, x) == [(_, (x', T))|_] | error $[Undefined variable [x].]@x,
+    @x.ref := x'.
+    
+  declareVarNonDuplicate : scope * ID * TYPE
+  declareVarNonDuplicate(s, x, T) :- {ps}
+    !type[x, T] in s,
+    query type filter e and { x' :- x' == x } min and false in s |-> ps,
+    try { ps == [_] } | error $[Duplicate declaration of [x] in the same scope.]@x.
+  declareVarsNonDuplicate maps declareVarNonDuplicate(*, list(*), *)
+  
+  resolveOrDeclareTermVar : scope * ID -> scope
+  resolveOrDeclareTermVar(s, x) = s' :- {ps}
+    query type filter (P | A)* and eq(x) min $ < P, $ < A and true in s |-> ps,
+    resolveOrDeclareTermVarHelp(s, x, ps) == s'.
+    
+  resolveOrDeclareTermVarHelp : scope * ID * list((path * (ID * TYPE))) -> scope
+  resolveOrDeclareTermVarHelp(s, x, [(_, (x', T))|_]) = s :-
+    @x.ref := x',
+    @x.refType := "ref",
+    try { T == TERM() } | error $[[x] is already bound to a strategy.].
+  resolveOrDeclareTermVarHelp(s, x, []) = s' :-
+    new s', s' -P-> s, !type[x, TERM()] in s',
+    @x.refType := "decl".
+
+rules
+  programOk : Module
+  programOk(Module(_, decls)) :- declsOk(new, decls).
+
+  declOk : scope * Decl
+  declsOk maps declOk(*, list(*))
+  declOk(s, Strategies(defs)) :- defsOk(s, defs).
+  
+  defOk : scope * Def
+  defsOk maps defOk(*, list(*))
+  
+  defOk(s, StrategyDef2Def(def@SDefT(name, strategyArgs, termArgs, body))) :- {argS bodyS s'}
+    new argS, argS -G-> s,
+    new bodyS, bodyS -A-> argS,
+    declareVarNonDuplicate(s, name, STRATEGY()),
+    declareVarsNonDuplicate(argS, strategyArgs, STRATEGY()),
+    declareVarsNonDuplicate(argS, termArgs, TERM()),
+    strategyOk(bodyS, body) == s'.
+  
+rules
+  strategyOk : scope * Strategy -> scope
+  strategiesOk maps strategyOk(*, list(*)) = list(*)
+  strategyOk(s, Fail()) = s.
+  strategyOk(s, Id()) = s.
+  strategyOk(s, Match(t)) = matchOk(s, t).
+  strategyOk(s, Build(t)) = s :- buildOk(s, t).
+  strategyOk(s, Seq(a, b)) = strategyOk(strategyOk(s, a), b).
+  strategyOk(s, GuardedLChoice(a, b, c)) = s :- {s1 s2}
+    strategyOk(s, a) == s1,
+    strategyOk(s1, b) == _,
+    strategyOk(s, c) == _.
+  strategyOk(s, PrimT(_, strats, terms)) = s :-
+    strategiesOk(s, strats) == _, 
+    buildsOk(s, terms).
+  strategyOk(s, Some(x)) = strategyOk(s, x).
+  strategyOk(s, One(x)) = strategyOk(s, x).
+  strategyOk(s, All(x)) = strategyOk(s, x).
+  strategyOk(s, Let(defs, body)) = strategyOk(s', body) :-
+    new s',
+    s' -P-> s,
+    defsOk(s', defs).
+    
+  strategyOk(s, CallNoArgs(x)) = s :- {T}
+    resolveVar(s, x) == T,
+    try { T == STRATEGY() } | error $[[x] refers to a term, but is being used as a strategy.].
+  strategyOk(s, CallT(x, strats, terms)) = s :- {T}
+    strategiesOk(s, strats) == _, 
+    buildsOk(s, terms),
+    resolveVar(s, x) == T,
+    try { T == STRATEGY() } | error $[[x] refers to a term, but is being used as a strategy.].
+  
+  matchOk : scope * Term -> scope  
+  matchOk(s, Var2Term(Var(x))) = resolveOrDeclareTermVar(s, x).
+  matchOk(s, Wld2Term(_)) = s.
+  matchOk(s, Str(_)) = s.
+  matchOk(s, Int(_)) = s.
+  matchOk(s, ListNil()) = s.
+  matchOk(s, ListCons(a, b)) = matchOk(matchOk(s, a), b).
+  matchOk(s, Op(_, terms)) = matchesOk(s, terms).
+  matchOk(s, Explode(a, b)) = matchOk(matchOk(s, a), b).
+  matchOk(s, TermAs(Var(v), b)) = matchOk(resolveOrDeclareTermVar(s, v), b).
+  
+  matchesOk : scope * list(Term) -> scope
+  matchesOk(s, []) = s.
+  matchesOk(s, [h|t]) = matchesOk(matchOk(s, h), t).
+  
+  buildOk : scope * Term
+  buildsOk maps buildOk(*, list(*))
+  buildOk(s, Var2Term(Var(x))) :- {T}
+    resolveVar(s, x) == T,
+    try { T == TERM() } | error $[[x] refers to a strategy, but is being used as a term.].
+  buildOk(_, Wld2Term(_)) :- false | error $[Cannot build a wildcard.].
+  buildOk(_, Int(_)).
+  buildOk(_, Str(_)).
+  buildOk(_, ListNil()).
+  buildOk(s, ListCons(a, b)) :- buildOk(s, a), buildOk(s, b).
+  buildOk(s, Op(_, args)) :- buildsOk(s, args).
+  buildOk(s, Explode(a, b)) :- buildOk(s, a), buildOk(s, b).
+  buildOk(s, TermAs(_, _)) :- false | error $[Cannot build @-bindings].

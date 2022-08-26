@@ -1,0 +1,22 @@
+module mstr/modules
+
+imports
+  mstr/identifiers
+  mstr/layout
+  mstr/strategies
+
+context-free start-symbols Module
+
+context-free sorts Module
+context-free syntax
+  Module.Module =
+<module <ModName>
+
+<{Decl "\n\n"}*>>
+
+context-free sorts Decl
+context-free syntax
+  Decl.Strategies = 
+<strategies
+
+<{Def "\n\n"}*>>

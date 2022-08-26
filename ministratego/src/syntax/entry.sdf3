@@ -1,0 +1,9 @@
+module entry
+
+imports
+  mstr/constants
+  mstr/identifiers
+  mstr/layout
+  mstr/terms
+  mstr/strategies
+  mstr/modules

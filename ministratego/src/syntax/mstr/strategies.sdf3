@@ -1,0 +1,53 @@
+module mstr/strategies
+
+imports
+  mstr/terms
+  mstr/constants
+  mstr/identifiers
+
+template options
+  keyword -/- [a-zA-Z0-9\'\-\_]
+  tokenize: ")(|"
+
+context-free sorts Def
+context-free syntax
+  Def = StrategyDef
+
+context-free sorts StrategyDef SDefT
+context-free syntax
+  StrategyDef.SDefT = <
+    <ID>(<{ID ", "}*> | <{ID ", "}*>) =
+      <Strategy>
+  >
+
+context-free sorts Strategy
+context-free syntax
+  Strategy       = <(<Strategy>)> {bracket} // technically sugar
+  Strategy.Fail  = <fail>
+  Strategy.Id    = <id>
+  Strategy.Match = <?<Term>>
+  Strategy.Build = <!<Term>>
+  Strategy.Seq   = <<Strategy>; <Strategy>> {right}
+  Strategy.GuardedLChoice = [[Strategy] < [Strategy] + [Strategy]] {right}
+  Strategy.PrimT = <prim(<String>, <{Strategy ", "}*>|<{Term ", "}*>)>
+  Strategy.Some  = <some(<Strategy>)>
+  Strategy.One   = <one(<Strategy>)>
+  Strategy.All   = <all(<Strategy>)>
+
+  Strategy.Let = <
+    let
+      <{Def "\n"}*>
+    in
+      <Strategy>
+    end
+  >
+  
+  Strategy.CallNoArgs = <<ID>> // technically sugar but without this it becomes an actual pain
+  Strategy.CallT = <<ID>(<{Strategy ", "}*>|<{Term ", "}*>)>
+
+context-free priorities
+  { Strategy.Build
+    Strategy.Match
+  }
+> Strategy.Seq
+> Strategy.GuardedLChoice

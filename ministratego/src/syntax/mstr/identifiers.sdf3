@@ -1,0 +1,105 @@
+module mstr/identifiers
+
+lexical sorts ModName ModNamePart
+lexical syntax
+  ModName = {ModNamePart "/"}+
+  ModNamePart = [a-zA-Z\.\_] [a-zA-Z0-9\'\.\-\_]*
+lexical restrictions
+  ModName -/- [a-zA-Z0-9\'\.\-\_]
+lexical syntax
+  ModName = "imports"     {reject}
+  ModName = "overlays"    {reject}
+  ModName = "rules"       {reject}
+  ModName = "signature"   {reject}
+  ModName = "strategies"  {reject}
+
+lexical sorts ID LId LCID UCID SortVar BuiltInType
+lexical syntax
+  ID   = [a-zA-Z] [a-zA-Z0-9\'\-\_]*
+  LId  = [a-zA-Z] [a-zA-Z0-9\'\-\_]* "*"
+  ID   = [\'] [a-z]+
+
+  LCID = [a-z] [a-zA-Z0-9\'\-\_]*
+  UCID = [A-Z] [a-zA-Z0-9\'\-\_]*
+
+  SortVar = LCID
+  SortVar = BuiltInType {reject}
+  BuiltInType = "string"
+  BuiltInType = "int"
+  BuiltInType = "real"
+  BuiltInType = "blob"
+
+lexical restrictions
+  ID   -/- [a-zA-Z0-9\'\_\*]
+  ID   -/- [\-].~[\>]
+  LId  -/- [a-zA-Z0-9\'\-\_]
+  LCID -/- [a-zA-Z0-9\'\-\_]
+  UCID -/- [a-zA-Z0-9\'\-\_]
+
+lexical syntax
+  ID   = "_"      {reject}
+  ID   = "'"      {reject}
+  ID   = Keyword  {reject}
+  LId  = Keyword  {reject}
+  LCID = Keyword  {reject}
+  UCID = Keyword  {reject}
+
+lexical sorts Keyword
+lexical syntax
+  Keyword = "all"
+  Keyword = "constructors"
+  Keyword = "fail"
+  Keyword = "id"
+  Keyword = "in"
+  Keyword = "let"
+  Keyword = "module"
+  Keyword = "one"
+  Keyword = "overlays"
+  Keyword = "prim"
+  Keyword = "proceed"
+  Keyword = "rules"
+  Keyword = "script"
+  Keyword = "signature"
+  Keyword = "some"
+  Keyword = "sorts"
+  Keyword = "strategies"
+  Keyword = "stratego"
+  Keyword = "test"
+  Keyword = "import-term"
+  Keyword = "is"
+
+lexical restrictions
+  "all"
+  "case"          // not reserved kw
+  "constructors"
+  "else"          // not reserved kw
+  "end"           // not reserved kw
+  "external"      // not reserved kw
+  "fail"
+  "id"
+  "if"            // not reserved kw
+  "in"
+  "is"
+  "imports"       // not reserved kw
+  "let"
+  "module"
+  "not"
+  "one"
+  "overlays"
+  "otherwise"     // not reserved kw
+  "prim"
+  "proceed"
+  "rec"           // not reserved kw
+  "rules"
+  "script"
+  "signature"
+  "some"
+  "sorts"
+  "strategies"
+  "stratego"
+  "switch"        // not reserved kw
+  "test"
+  "then"          // not reserved kw
+  "with"
+  "import-term"
+    -/- [a-zA-Z0-9\'\-\_]

@@ -1,0 +1,79 @@
+module foo
+
+strategies 
+ is-type(|t) = prim("is_type", |t)
+ addi(|) = prim("addi", |)
+ muli(|) = prim("muli", |)
+ concat(|) = prim("concat", |)
+ prints(|) = prim("prints", |)
+ 
+ is-int(|) = is-type(|"INT")
+ is-string(|) = is-type(|"STRING")
+ is-list(|) = ?x; (?[] < !x + (?[_|_]; !x))
+ is-cons(|) = ?x; ?_#(_); !x
+ 
+ try(s|) = s < id + id 
+ not(s|) = s < fail + id
+ where(s|) = ?x; s; !x
+ eq(|) = ?T(x, x)
+ neq(|) = not(eq|)
+   
+ foldl(s|) =
+   ?T([], accum) < !accum
+   + ?T([h|t], accum) < !T(h, accum); s; ?newaccum; !T(t, newaccum); foldl(s|)
+   + fail
+   
+ map(s|) =
+   ?[] < ![]
+   + ?[h|t] < !h; s; ?hh; !t; map(s|); ?tt; ![hh|tt]
+   + fail
+
+ join-to-string(s|sep) = map(s|); ?r; !T(r, ""); foldl(concat-sep(|sep)|)
+ concat-sep(|sep) =
+   ?T(a, "") < !a
+   + ?T(b, a) < !P(a, sep); concat; ?x; !P(x, b); concat
+   + fail 
+   
+ debug(|) = where(term-to-string; prints|)
+
+ term-to-string(|) =
+   is-string < id
+   + is-int < !"_"
+   + is-list < list-to-string
+   + is-cons < cons-to-string
+   + fail
+
+ list-to-string(|) =
+   join-to-string(term-to-string|","); ?mid;
+   !"["; ?open;
+   !"]"; ?close;
+   !T(open, mid); concat; ?openmid;
+   !T(openmid, close); concat
+   
+ cons-to-string(|) =
+   ?name#(args);
+   !args; join-to-string(term-to-string|","); ?mid;
+   !"("; ?open;
+   !")"; ?close;
+   !T(name, open); concat; ?nameopen;
+   !T(nameopen, mid); concat; ?nameopenmid;
+   !T(nameopenmid, close); concat
+
+ topdown(s|) = s; all(topdown(s|))
+ bottomup(s|) = all(bottomup(s|)); s
+ 
+ constant-fold(|) =
+   // Add(Int(a), Int(b)) -> Int(a + b)
+   ?Add(Int(a), Int(b)) < !P(a, b); addi; ?x; !Int(x) 
+   // Mul(Int(a), Int(b)) -> Int(a * b)
+   + ?Mul(Int(a), Int(b)) < !P(a, b); muli; ?x; !Int(x) 
+   + fail
+   
+ foo(|a) =
+   let
+     get(|) = !a
+   in
+     get
+   end
+
+ main(|) = foo(|"test"); debug

@@ -1,0 +1,34 @@
+module dynamics/main
+
+imports
+  dynamics/native
+  dynamics/stdlib
+  
+  dynamics/strategies
+  dynamics/data
+  
+constraint-analyzer
+  property refType :: 'string
+  
+rules
+  $succeed :: Pluggable(@cval) // (term: Term)
+  $fail :: Pluggable(@cval) // ()
+
+  compileModule :: 'Module -> Pluggable
+  compileModule(Module(_, decls)) = {
+    builtins()
+    primitive()
+    
+    fix { compileDecls(decls) }
+    
+    term <- termStr(str('""))
+    var('"main")@([var('"$toplevelSucceed"), var('"$toplevelFail"), term])
+  }
+  
+  compileDecls :: List('Decl) -> List(@cfun)
+  compileDecls([]) = []
+  compileDecls([Strategies(strats)|rest]) = {
+    defs <- compileStrategyDefs(strats)
+    rests <- compileDecls(rest)
+    defs ++ rests
+  }

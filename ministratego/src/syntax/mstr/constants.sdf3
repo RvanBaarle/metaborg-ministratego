@@ -1,0 +1,16 @@
+module mstr/constants
+
+lexical sorts Int Real StrChar STRING
+lexical syntax
+  Int     = [\-]? [0-9]+
+
+  Real    = [\-]? [0-9]+ [\.] [0-9]+
+
+  STRING = StrChar*
+
+  StrChar = ~[\"\\]
+  StrChar = [\\] [tnrbf\"\'\\]
+  
+context-free sorts String
+context-free syntax
+  String.String = "\"" STRING "\""

@@ -1,0 +1,311 @@
+module dynamics/strategies
+
+imports
+  dynamics/main
+  dynamics/stdlib
+  dynamics/native
+  dynamics/data
+  
+  signatures/entry-sig
+  
+rules
+  compileStrategyDef :: 'Def -> @cfun
+  
+  compileStrategyDef(def@SDefT(sname, strategyArgs, termArgs, body)) = {
+    name <- var(sname)
+    term <- fresh-var(term)
+    stratVarNames <- idsToVars(strategyArgs)
+    termVarNames <- idsToVars(termArgs)
+    succ <- fresh-var(succ)
+    fail <- fresh-var(fail)
+    
+    fun name([succ, fail, term] ++ stratVarNames ++ termVarNames) = {        
+      // todo
+      with $succeed = succ, $fail = fail do
+        compileStrategy(term, body)
+    }
+  }
+  
+  // first argument is the current term
+  compileStrategy :: @cval * 'Strategy -> @cexp
+  compileStrategy(_, Fail()) = {
+   f <- $fail
+   f@([])
+  }
+  compileStrategy(t, Id()) = {
+    s <- $succeed
+    s@([t])
+  }
+  compileStrategy(t, Match(p)) = {
+    matchTerm(t, p)
+    s <- $succeed
+    s@([t])
+  }
+  compileStrategy(_, Build(t)) = {
+    ret <- constructTerm(t)
+    s <- $succeed
+    s@([ret])
+  }
+  compileStrategy(t, Seq(a, b)) = {
+    t2 <- fresh-var(t)
+    
+    with $succeed = {
+      succ <- fresh-var(seqSucc)
+      fix {
+        fun succ([t2]) = compileStrategy(t2, b)
+      }
+      succ
+    } do {    
+      compileStrategy(t, a)
+    }
+  }
+  compileStrategy(t, GuardedLChoice(a, b, c)) = {    
+    with $succeed = {
+      succ <- fresh-var(seqSucc)
+      t2 <- fresh-var(t)
+      fix {
+        fun succ([t2]) = compileStrategy(t2, b)
+      }
+      succ
+    }, $fail = {
+      fail <- fresh-var(choiceFail)
+      fix {
+        fun fail([]) = compileStrategy(t, c)
+      }
+      fail
+    } do {    
+      compileStrategy(t, a)
+    }
+  }
+  compileStrategy(t, PrimT(String(id), strats, terms)) = callNamedStrategy(var('"PRIM_" + id), t, strats, terms)
+  compileStrategy(t, Some(x)) = callNamedStrategy(var('"$strategySome"), t, [x], [])
+  compileStrategy(t, One(x)) = callNamedStrategy(var('"$strategyOne"), t, [x], [])
+  compileStrategy(t, All(x)) = callNamedStrategy(var('"$strategyAll"), t, [x], [])
+  compileStrategy(t, Let(decls, body)) = {
+    fix { compileStrategyDefs(decls) }
+    compileStrategy(t, body)
+  }
+  compileStrategy(t, CallNoArgs(id)) = {
+    succ <- $succeed
+    fail <- $fail
+    var(id)@([succ, fail, t])
+  }
+  compileStrategy(t, CallT(id, strats, terms)) = {
+    callNamedStrategy(var(id), t, strats, terms)
+  }
+  
+  callNamedStrategy :: @cval * @cval * List('Strategy) * List('Term) -> @cexp
+  callNamedStrategy(id, t, strats, terms) = {
+    succ <- $succeed
+    fail <- $fail
+    stratfuns <- compileStrategiesToFunctions(strats)
+    stratnames <- namesOfFunctions(stratfuns)
+    termvs <- constructTerms(terms)
+    
+    fix {
+      stratfuns
+    }
+    
+    id@([succ, fail, t] ++ stratnames ++ termvs)
+  }
+  
+  namesOfFunctions :: List(@cfun) -> List(@cval)
+  namesOfFunctions([]) = []
+  namesOfFunctions([h|t]) = [nameof(h)|namesOfFunctions(t)]
+  
+  compileStrategyToFunction :: 'Strategy -> @cfun
+  compileStrategyToFunction(h) = {
+    name <- fresh-var(s)
+    term <- fresh-var(term)
+    succ <- fresh-var(succ)
+    fail <- fresh-var(fail)
+    
+    fun name([succ, fail, term]) = {        
+      // todo
+      with $succeed = succ, $fail = fail do
+        compileStrategy(term, h)
+    }
+  }
+    
+  compileStrategiesToFunctions :: List('Strategy) -> List(@cfun)
+  compileStrategiesToFunctions([]) = []
+  compileStrategiesToFunctions([h|t]) = {
+    stratfn <- compileStrategyToFunction(h)
+    stratfns <- compileStrategiesToFunctions(t)
+    [stratfn|stratfns]
+  }
+  
+  
+rules
+  constructTerm :: 'Term -> Pluggable(@cval)
+  constructTerm(Var(x)) = var(x) // this is guaranteed to exist through static type checking
+  constructTerm(Int(i)) = termInt(int(i))
+  constructTerm(Str(String(x))) = termStr(str(x))
+  constructTerm(Op(name, args)) = {
+    terms <- constructTerms(args)
+    arr <- #array-new(terms)
+    termCons(str(name), arr)
+  }
+  constructTerm(ListNil()) = {
+    arr <- #array-new([])
+    termList(arr)
+  }
+  constructTerm(ListCons(a, b)) = {
+    at <- constructTerm(a)
+    atarr <- #array-new([at])
+    
+    bt <- constructTerm(b)
+    
+    // ensure this is a list
+    fail <- $fail
+    isTermList(bt, after, fail) label after/0:
+    
+    btarr <- #record-read(bt, str('"elements"))
+    
+    res <- #array-concat(atarr, btarr)
+    termList(res)
+  }
+  constructTerm(Explode(a, b)) = {
+    fail <- $fail
+  
+    at <- constructTerm(a)
+    isTermString(at, after, fail) label after/0:
+    
+    atname <- #record-read(at, str('"value"))
+    
+    bt <- constructTerm(b)
+    isTermList(bt, after, fail) label after/0:
+    
+    btarr <- #record-read(bt, str('"elements"))
+    termCons(atname, btarr)
+  }
+  
+  constructTerms :: List('Term) -> Pluggable(List(@cval))
+  constructTerms([]) = []
+  constructTerms([h|t]) = {
+    hh <- constructTerm(h)
+    ht <- constructTerms(t)
+    [hh|ht]
+  }
+  
+rules
+  matchTerm :: @cval * 'Term -> Pluggable
+  matchTerm(_, Wld()) = hole // matching with a wildcard always succeeds
+  matchTerm(x, Var(n)) = matchVarTerm(refType(n), x, n)
+  matchTerm(x, Int(i)) = {
+    iv <- termInt(int(i))
+    fail <- $fail
+    termEq(x, iv, after, fail)
+  } label after/0:
+  matchTerm(x, Str(String(s))) = {
+    iv <- termStr(str(s))
+    fail <- $fail
+    termEq(x, iv, after, fail)
+  } label after/0:
+  matchTerm(x, Op(name, args)) = {
+    fail <- $fail
+    
+    isTermConsWithName(x, str(name), after, fail) label after/0:
+    
+    // we now know that constructor matches, now we check args
+    i <- int('0)
+    argvs <- #record-read(x, str('"args"))
+    
+    matchTerms(i, argvs, args)
+  }
+  matchTerm(x, ListNil()) = {
+    fail <- $fail
+    
+    // check if list
+    isTermList(x, after, fail) label after/0:
+    
+    arr <- #record-read(x, str('"elements"))
+    len <- #array-length(arr)
+    
+    // check if empty
+    {
+      if #int-eq(len, int('0)) then {
+        after@([])
+      } else {
+        fail@([])
+      }
+    } label after/0:
+  }
+  matchTerm(x, ListCons(a, b)) = {
+    fail <- $fail
+    
+    // check if list
+    isTermList(x, after, fail) label after/0:
+    
+    arr <- #record-read(x, str('"elements"))
+    len <- #array-length(arr)
+    
+    // check if non-empty
+    {
+      if #int-eq(len, int('0)) then {
+        fail@([])
+      } else {
+        after@([])
+      }
+    } label after/0:
+    
+    // check head
+    hd <- #array-read(arr, int('0))
+    matchTerm(hd, a)
+    
+    // check tail
+    tail <- #array-tail(arr)
+    taillist <- termList(tail)
+    
+    matchTerm(taillist, b)
+  }
+  matchTerm(x, Explode(a, b)) = {
+    fail <- $fail
+    
+    // check if cons
+    isTermCons(x, after, fail) label after/0:
+    
+    // check name
+    name <- #record-read(x, str('"name"))
+    nameterm <- termStr(name)
+    matchTerm(nameterm, a)
+    
+    // check args
+    args <- #record-read(x, str('"args"))
+    argsterm <- termList(args)
+    matchTerm(argsterm, b)
+  }
+  matchTerm(x, TermAs(Var(name), pat)) = {
+    matchVarTerm(refType(name), x, name)
+    matchTerm(x, pat)
+  }
+  
+  matchTerms :: @cval * @cval * List('Term) -> Pluggable
+  matchTerms(_, _, []) = hole
+  matchTerms(i, vals, [hd|tl]) = {
+    v <- #array-read(vals, i)
+    matchTerm(v, hd)
+    inext <- #int-add(i, int('1)) // todo: ideally we do this in a constant context
+    matchTerms(inext, vals, tl)
+  }
+  
+  matchVarTerm :: List('string) * @cval * 'ID -> Pluggable
+  matchVarTerm(["decl"], v, x) = let var(x) = v in hole
+  matchVarTerm(["ref"], v, x) = {
+    f <- $fail
+    termEq(v, var(x), after, f) label after/0:
+  }
+  
+rules
+  idsToVars :: List('ID) -> List(@cval)
+  idsToVars([]) = []
+  idsToVars([h|t]) = [var(h)|idsToVars(t)]
+  
+rules
+  compileStrategyDefs :: List('Def) -> List(@cfun)
+  compileStrategyDefs([]) = []
+  compileStrategyDefs([a|b]) = {
+    ac <- compileStrategyDef(a)
+    bc <- compileStrategyDefs(b)
+    [ac|bc]
+  }
