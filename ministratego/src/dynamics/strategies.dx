@@ -5,11 +5,12 @@ imports
   dynamics/stdlib
   dynamics/native
   dynamics/data
+  dynamics/scope
   
   signatures/entry-sig
   
 rules
-  compileStrategyDef :: 'Def -> @cfun
+  compileStrategyDef :: 'Def -> Pluggable(@cfun)
   
   compileStrategyDef(def@SDefT(sname, strategyArgs, termArgs, body)) = {
     name <- var(sname)
@@ -18,13 +19,23 @@ rules
     termVarNames <- idsToVars(termArgs)
     succ <- fresh-var(succ)
     fail <- fresh-var(fail)
+    frameT <- compileFrameType(fresh-typevar(frame), vars(def), ['"G" : $frameT])
     
     fun name([succ, fail, term] ++ stratVarNames ++ termVarNames) = {        
       // todo
-      with $succeed = succ, $fail = fail do
+      frame <- #struct-new<frameT>()
+      #struct-write(frame, symbol('"G"), $frame)
+      with $succeed = succ, $fail = fail, $frame = frame, $frameT = frameT do {
+        assignArguments(termArgs, termVarNames)
         compileStrategy(term, body)
+      }
     }
   }
+  
+  assignArguments :: List('ID) * List(@cval) -> Pluggable
+  assignArguments([], []) = hole
+  assignArguments([x|t1], [v|t2]) =
+    #struct-write($frame, symbol(x), v)
   
   // first argument is the current term
   compileStrategy :: @cval * 'Strategy -> @cexp
@@ -60,21 +71,40 @@ rules
     }
   }
   compileStrategy(t, GuardedLChoice(a, b, c)) = {    
+    aframeT <- compileFrameType(fresh-typevar(frame), vars(a), ['"G": $frameT])
+    aframe <- #struct-new<aframeT>()
+    #struct-write(aframe, symbol('"G"), $frame)
     with $succeed = {
       succ <- fresh-var(seqSucc)
       t2 <- fresh-var(t)
       fix {
-        fun succ([t2]) = compileStrategy(t2, b)
+        fun succ([t2]) = {
+          bframeT <- compileFrameType(fresh-typevar(frame), vars(b), ['"G": aframeT])
+          bframe <- #struct-new<bframeT>()
+          #struct-write(bframe, symbol('"G"), aframe)
+          with $frame = bframe, $frameT = bframeT do {
+            compileStrategy(t2, b)
+          }
+        }
       }
       succ
     }, $fail = {
       fail <- fresh-var(choiceFail)
       fix {
-        fun fail([]) = compileStrategy(t, c)
+        fun fail([]) = {
+          cframeT <- compileFrameType(fresh-typevar(frame), vars(c), ['"G": $frameT])
+          cframe <- #struct-new<cframeT>()
+          #struct-write(cframe, symbol('"G"), $frame)
+          with $frame = cframe, $frameT = cframeT do {
+            compileStrategy(t, c)
+          }
+        }
       }
       fail
-    } do {    
-      compileStrategy(t, a)
+    } do {
+      with $frame = aframe, $frameT = aframeT do {
+        compileStrategy(t, a)
+      }
     }
   }
   compileStrategy(t, PrimT(String(id), strats, terms)) = callNamedStrategy(var('"PRIM_" + id), t, strats, terms)
@@ -82,7 +112,8 @@ rules
   compileStrategy(t, One(x)) = callNamedStrategy(var('"$strategyOne"), t, [x], [])
   compileStrategy(t, All(x)) = callNamedStrategy(var('"$strategyAll"), t, [x], [])
   compileStrategy(t, Let(decls, body)) = {
-    fix { compileStrategyDefs(decls) }
+    funs <- compileStrategyDefs(decls)
+    fix { funs }
     compileStrategy(t, body)
   }
   compileStrategy(t, CallNoArgs(id)) = {
@@ -120,7 +151,7 @@ rules
     succ <- fresh-var(succ)
     fail <- fresh-var(fail)
     
-    fun name([succ, fail, term]) = {        
+    fun name<function<[*, *, typevar('"Term")]>>([succ, fail, term]) = {        
       // todo
       with $succeed = succ, $fail = fail do
         compileStrategy(term, h)
@@ -138,7 +169,10 @@ rules
   
 rules
   constructTerm :: 'Term -> Pluggable(@cval)
-  constructTerm(Var(x)) = var(x) // this is guaranteed to exist through static type checking
+  constructTerm(Var(x)) = {
+    frame <- resolveFrame($frame, path(x))
+    #struct-read(frame, symbol(x))
+  }  // this is guaranteed to exist through static type checking
   constructTerm(Int(i)) = termInt(int(i))
   constructTerm(Str(String(x))) = termStr(str(x))
   constructTerm(Op(name, args)) = {
@@ -153,14 +187,14 @@ rules
   constructTerm(ListCons(a, b)) = {
     at <- constructTerm(a)
     atarr <- #array-new([at])
-    
     bt <- constructTerm(b)
+    btt <- #as-subtype<typevar('"ListTerm")>(bt)
     
     // ensure this is a list
     fail <- $fail
     isTermList(bt, after, fail) label after/0:
     
-    btarr <- #record-read(bt, str('"elements"))
+    btarr <- #struct-read(btt, symbol('"elements"))
     
     res <- #array-concat(atarr, btarr)
     termList(res)
@@ -170,13 +204,15 @@ rules
   
     at <- constructTerm(a)
     isTermString(at, after, fail) label after/0:
+    att <- #as-subtype<typevar('"StringTerm")>(bt)
     
-    atname <- #record-read(at, str('"value"))
+    atname <- #struct-read(att, symbol('"value"))
     
     bt <- constructTerm(b)
     isTermList(bt, after, fail) label after/0:
+    btt <- #as-subtype<typevar('"ListTerm")>(bt)
     
-    btarr <- #record-read(bt, str('"elements"))
+    btarr <- #record-read(btt, symbol('"elements"))
     termCons(atname, btarr)
   }
   
@@ -206,10 +242,11 @@ rules
     fail <- $fail
     
     isTermConsWithName(x, str(name), after, fail) label after/0:
+    xt <- #as-subtype<typevar('"ConsTerm")>(x)
     
     // we now know that constructor matches, now we check args
     i <- int('0)
-    argvs <- #record-read(x, str('"args"))
+    argvs <- #struct-read(xt, symbol('"args"))
     
     matchTerms(i, argvs, args)
   }
@@ -218,8 +255,9 @@ rules
     
     // check if list
     isTermList(x, after, fail) label after/0:
+    xt <- #as-subtype<typevar('"ListTerm")>(x)
     
-    arr <- #record-read(x, str('"elements"))
+    arr <- #struct-read(xt, symbol('"elements"))
     len <- #array-length(arr)
     
     // check if empty
@@ -236,8 +274,9 @@ rules
     
     // check if list
     isTermList(x, after, fail) label after/0:
+    xt <- #as-subtype<typevar('"ListTerm")>(x)
     
-    arr <- #record-read(x, str('"elements"))
+    arr <- #struct-read(xt, symbol('"elements"))
     len <- #array-length(arr)
     
     // check if non-empty
@@ -250,7 +289,7 @@ rules
     } label after/0:
     
     // check head
-    hd <- #array-read(arr, int('0))
+    hd <- #array-read<typevar('"Term")>(arr, int('0))
     matchTerm(hd, a)
     
     // check tail
@@ -264,14 +303,15 @@ rules
     
     // check if cons
     isTermCons(x, after, fail) label after/0:
+    xt <- #as-subtype<typevar('"ConsTerm")>(x)
     
     // check name
-    name <- #record-read(x, str('"name"))
+    name <- #struct-read(xt, symbol('"name"))
     nameterm <- termStr(name)
     matchTerm(nameterm, a)
     
     // check args
-    args <- #record-read(x, str('"args"))
+    args <- #struct-read(xt, symbol('"args"))
     argsterm <- termList(args)
     matchTerm(argsterm, b)
   }
@@ -283,17 +323,25 @@ rules
   matchTerms :: @cval * @cval * List('Term) -> Pluggable
   matchTerms(_, _, []) = hole
   matchTerms(i, vals, [hd|tl]) = {
-    v <- #array-read(vals, i)
+    v <- #array-read<typevar('"Term")>(vals, i)
     matchTerm(v, hd)
     inext <- #int-add(i, int('1)) // todo: ideally we do this in a constant context
     matchTerms(inext, vals, tl)
   }
   
   matchVarTerm :: List('string) * @cval * 'ID -> Pluggable
-  matchVarTerm(["decl"], v, x) = let var(x) = v in hole
+  matchVarTerm(["decl"], v, x) = #struct-write($frame, symbol(x), v)
+//  {
+//    newScope <- fresh-var(scope)
+//    with $scope = newScope do {
+//      hole
+//    }
+//  }
   matchVarTerm(["ref"], v, x) = {
     f <- $fail
-    termEq(v, var(x), after, f) label after/0:
+    frame <- resolveFrame($frame, path(x))
+    val <- #struct-read(frame, symbol(x))
+    termEq(v, val, after, f) label after/0:
   }
   
 rules
@@ -302,7 +350,7 @@ rules
   idsToVars([h|t]) = [var(h)|idsToVars(t)]
   
 rules
-  compileStrategyDefs :: List('Def) -> List(@cfun)
+  compileStrategyDefs :: List('Def) -> Pluggable(List(@cfun))
   compileStrategyDefs([]) = []
   compileStrategyDefs([a|b]) = {
     ac <- compileStrategyDef(a)

@@ -1,0 +1,43 @@
+module dynamics/scope
+
+imports
+  signatures/entry-sig
+  dynamics/main
+  dynamics/stdlib
+
+signature
+  sorts Path Label Scope
+  constructors
+    PathEmpty : Scope -> Path 
+    PathStep : Path * Label  * Scope -> Path
+    Label : string -> Label
+
+constraint-analyzer
+  property path :: 'Path
+  property vars :: 'ID
+
+rules
+
+  compileFrameType :: @ctype * List('ID) * List(@cstructmember) -> Pluggable(@ctype)
+  compileFrameType(tvar, elems, extra) = {
+    typedef {
+      tvar = struct<compileFrameElements(elems) ++ extra>
+    }
+    tvar
+  }
+  
+  compileFrameElement :: 'ID -> @cstructmember
+  compileFrameElements :: List('ID) -> List(@cstructmember)
+  compileFrameElements([h|t]) = [compileFrameElement(h)|compileFrameElements(t)]
+  compileFrameElements([]) = []
+  compileFrameElement(x) = x : typevar('"Term")
+
+  resolveFrame :: @cval * List('Path) -> Pluggable(@cval)
+  resolveFrame(f, []) = f
+  resolveFrame(f, [PathEmpty(_)]) = f
+  resolveFrame(f, [PathStep(p, Label("main!P"), _)]) = resolveFrame(f, [p])  // Merge P labels
+  resolveFrame(f, [PathStep(p, Label("main!G"), _)]) = {
+    f_next <- resolveFrame(f, [p])
+    #struct-read(f_next, symbol('"G"))
+  }
+  resolveFrame(f, [PathStep(p, Label("main!A"), _)]) = resolveFrame(f, [p])  // Merge A labels

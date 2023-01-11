@@ -6,68 +6,83 @@ imports
 rules
   builtins :: () -> Pluggable
   builtins() = @
+  typedef {
+    Term = {type: string}
+    ConsTerm = {extends Term, name: string, args: array<any>}
+    ListTerm = {extends Term, elements: array<any>}
+    StringTerm = {extends Term, value: string}
+    IntTerm = {extends Term, value: int}
+  } in
   fix {
     fun $toplevelSucceed(term) =
       #print("OK") => tmp0;
-      #print(term) => tmp1;
+//      #print(term) => tmp1;
       #exit( )
     fun $toplevelFail( ) =
       #print("Fail") => tmp0;
       #exit( )
-    fun $termEq(a, b, ifTrue, ifFalse) =
-      #record-read(a, "type") => atype;
-      #record-read(b, "type") => btype;
+    fun $termEq<Term, Term, *, *>(a, b, ifTrue, ifFalse) =
+      #struct-read(a, !type) => atype;
+      #struct-read(b, !type) => btype;
       if #str-neq(atype, btype) then
         ifFalse()
       else
         if #str-eq(atype, "STRING") then
-          $termEqString(a, b, ifTrue, ifFalse)
+          #as-subtype<StringTerm>(a) => as;
+          #as-subtype<StringTerm>(b) => bs;
+          $termEqString(as, bs, ifTrue, ifFalse)
         else
           if #str-eq(atype, "INT") then
-            $termEqInt(a, b, ifTrue, ifFalse)
+            #as-subtype<IntTerm>(a) => as;
+            #as-subtype<IntTerm>(b) => bs;
+            $termEqInt(as, bs, ifTrue, ifFalse)
           else
             if #str-eq(atype, "LIST") then
-              $termEqList(a, b, ifTrue, ifFalse)
+              #as-subtype<ListTerm>(a) => as;
+              #as-subtype<ListTerm>(b) => bs;
+              $termEqList(as, bs, ifTrue, ifFalse)
             else
-              $termEqCons(a, b, ifTrue, ifFalse)
-    fun $termEqString(a, b, ifTrue, ifFalse) =
-      #record-read(a, "value") => avalue;
-      #record-read(b, "value") => bvalue;
+              #as-subtype<ConsTerm>(a) => as;
+              #as-subtype<ConsTerm>(b) => bs;
+              $termEqCons(as, bs, ifTrue, ifFalse)
+    fun $termEqString<StringTerm, StringTerm, *, *>(a, b, ifTrue, ifFalse) =
+      #struct-read(a, !value) => avalue;
+      #struct-read(b, !value) => bvalue;
       if #str-eq(avalue, bvalue) then
         ifTrue()
       else
         ifFalse()
-    fun $termEqInt(a, b, ifTrue, ifFalse) =
-      #record-read(a, "value") => avalue;
-      #record-read(b, "value") => bvalue;
+    fun $termEqInt<IntTerm, IntTerm, *, *>(a, b, ifTrue, ifFalse) =
+      #struct-read(a, !value) => avalue;
+      #struct-read(b, !value) => bvalue;
       if #int-eq(avalue, bvalue) then
         ifTrue()
       else
         ifFalse()
-    fun $termEqCons(a, b, ifTrue, ifFalse) =
-      #record-read(a, "name") => aname;
-      #record-read(b, "name") => bname;
+    fun $termEqCons<ConsTerm, ConsTerm, *, *>(a, b, ifTrue, ifFalse) =
+      #struct-read(a, !name) => aname;
+      #struct-read(b, !name) => bname;
       if #str-neq(aname, bname) then
         ifFalse()
       else
-        #record-read(a, "args") => aargs;
-        #record-read(b, "args") => bargs;
+        #struct-read(a, !args) => aargs;
+        #struct-read(b, !args) => bargs;
         #array-length(aargs) => aarglen;
         #array-length(bargs) => barglen;
         if #int-eq(aarglen, barglen) then
           $termEqArray(aarglen, aargs, bargs, ifTrue, ifFalse)
         else
           ifFalse()
-    fun $termEqList(a, b, ifTrue, ifFalse) =
-      #record-read(a, "elements") => aargs;
-      #record-read(b, "elements") => bargs;
+    fun $termEqList<ListTerm, ListTerm, *, *>(a, b, ifTrue, ifFalse) =
+      #struct-read(a, !elements) => aargs;
+      #struct-read(b, !elements) => bargs;
       #array-length(aargs) => aarglen;
       #array-length(bargs) => barglen;
       if #int-eq(aarglen, barglen) then
         $termEqArray(aarglen, aargs, bargs, ifTrue, ifFalse)
       else
         ifFalse()
-    fun $termEqArray(count, aargs, bargs, ifTrue, ifFalse) =
+    fun $termEqArray<int, array<any>, array<any>, *, *>(count, aargs, bargs, ifTrue, ifFalse) =
       if #int-eq(count, 0) then
         ifTrue()
       else
@@ -76,14 +91,14 @@ rules
           fun ifTrueRec() =
             $termEqArray(i, aargs, bargs, ifTrue, ifFalse)
         } in
-          #array-read(aargs, i) => aval;
-          #array-read(bargs, i) => bval;
+          #array-read<Term>(aargs, i) => aval;
+          #array-read<Term>(bargs, i) => bval;
           $termEq(aval, bval, ifTrueRec, ifFalse)   
                 
     // evaluate `strat` on every element in list. For every element,
     // call onSucceed/onFail with the number of prior succeeded elements,
     // and a callback to continue evaluation. Call onFinish after finishing
-    fun $strategyEvaluatorList(elements, strat, onSucceed, onFail, onFinish) =
+    fun $strategyEvaluatorList<array<any>, *, *, *, *>(elements, strat, onSucceed, onFail, onFinish) =
       #array-length(elements) => len;
       fix {
         fun inner(i, succeeded) =
@@ -98,73 +113,84 @@ rules
                 inner(inext, newsucc)
             
               fun succeed(term) =
-                #array-write(elements, i, term) => ignored;
+                #array-write<Term>(elements, i, term) => ignored;
                 onSucceed(succeeded, runnextSucceed)
               
               fun fail() =
                 onFail(succeeded, runnextFail)
             } in
-              #array-read(elements, i) => el;
+              #array-read<Term>(elements, i) => el;
               strat(succeed, fail, el)
       } in
         inner(0, 0)
       
     // implementation of some(x)        
-    fun $strategySome(onSucceed, onFail, term, strat) =
-      #record-read(term, "type") => type;
+    fun $strategySome<*, *, Term, *>(onSucceed, onFail, term, strat) =
+      #struct-read(term, !type) => type;
       if #str-eq(type, "LIST") then
+        #as-subtype<ListTerm>(term) => term;
         $strategySomeList(onSucceed, onFail, term, strat)
       else
         if #str-eq(type, "CONS") then
+          #as-subtype<ConsTerm>(term) => term;
           $strategySomeCons(onSucceed, onFail, term, strat)
         else
           onFail()
           
     // some(x) for lists
-    fun $strategySomeList(onSucceed, onFail, term, strat) =
-      #record-read(term, "elements") => els;
+    fun $strategySomeList<*, *, ListTerm, *>(onSucceed, onFail, term, strat) =
+      #struct-read(term, !elements) => els;
       #array-new() => tmp0;
       #array-concat(els, tmp0) => copy;
       fix {
         fun goNext(ignored, next) = next()
         fun onFinish(n) =
           if #int-gt(n, 0) then
-            #record-new("type", "LIST", "elements", copy) => newt;
-            onSucceed(newt)
+            #struct-new<ListTerm>() => newt;
+            #struct-write(newt, !type, "LIST") => _;
+            #struct-write(newt, !elements, copy) => _;
+            #as-supertype<Term>(newt) => newtt;
+            onSucceed(newtt)
           else
             onFail()
       } in $strategyEvaluatorList(copy, strat, goNext, goNext, onFinish)
       
     // some(x) for constructors
-    fun $strategySomeCons(onSucceed, onFail, term, strat) =
-      #record-read(term, "args") => els;
-      #record-read(term, "name") => name;
+    fun $strategySomeCons<*, *, ConsTerm, *>(onSucceed, onFail, term, strat) =
+      #struct-read(term, !args) => els;
+      #struct-read(term, !name) => name;
       #array-new() => tmp0;
       #array-concat(els, tmp0) => copy;
       fix {
         fun goNext(ignored, next) = next()
         fun evaluate(n) =
           if #int-gt(n, 0) then
-            #record-new("type", "CONS", "name", name, "args", copy) => newt;
-            onSucceed(newt)
+            #struct-new<ConsTerm>() => newt;
+            #struct-write(newt, !type, "CONS") => _;
+            #struct-write(newt, !name, name) => _;
+            #struct-write(newt, !args, copy) => _;
+            #as-supertype<Term>(newt) => newtt;
+            onSucceed(newtt)
           else
             onFail()
       } in $strategyEvaluatorList(copy, strat, goNext, goNext, evaluate)
       
     // implementation of one(x)        
-    fun $strategyOne(onSucceed, onFail, term, strat) =
-      #record-read(term, "type") => type;
+    fun $strategyOne<*, *, Term, *>(onSucceed, onFail, term, strat) =
+      #struct-read(term, !type) => type;
       if #str-eq(type, "LIST") then
+        #as-subtype<ListTerm>(term) => term;
         $strategyOneList(onSucceed, onFail, term, strat)
       else
         if #str-eq(type, "CONS") then
+          #as-subtype<ConsTerm>(term) => term;
           $strategyOneCons(onSucceed, onFail, term, strat)
         else
           onFail()
           
     // one(x) for lists
-    fun $strategyOneList(onSucceed, onFail, term, strat) =
-      #record-read(term, "elements") => els;
+    fun $strategyOneList<*, *, ListTerm, *>(onSucceed, onFail, term, strat) =
+      #struct-read(term, !elements) => els;
       #array-new() => tmp0;
       #array-concat(els, tmp0) => copy;
       fix {
@@ -173,17 +199,20 @@ rules
         
         // called only once
         fun onListSucceed(count, next) =
-          #record-new("type", "LIST", "elements", copy) => newt;
-          onSucceed(newt)
+          #struct-new<ListTerm>() => newt;
+          #struct-write(newt, !type, "LIST") => _;
+          #struct-write(newt, !elements, copy) => _;
+          #as-supertype<Term>(newt) => newtt;
+          onSucceed(newtt)
         
         // none matched
         fun onListFinish(ignored) = onFail()
       } in $strategyEvaluatorList(copy, strat, onListSucceed, onListFail, onListFinish)
       
     // one(x) for constructors
-    fun $strategyOneCons(onSucceed, onFail, term, strat) =
-      #record-read(term, "args") => els;
-      #record-read(term, "name") => name;
+    fun $strategyOneCons<*, *, ConsTerm, *>(onSucceed, onFail, term, strat) =
+      #struct-read(term, !args) => els;
+      #struct-read(term, !name) => name;
       #array-new() => tmp0;
       #array-concat(els, tmp0) => copy;
       fix {
@@ -192,27 +221,33 @@ rules
         
         // called only once
         fun onListSucceed(count, next) =
-          #record-new("type", "CONS", "name", name, "args", copy) => newt;
-          onSucceed(newt)
+          #struct-new<ConsTerm>() => newt;
+          #struct-write(newt, !type, "CONS") => _;
+          #struct-write(newt, !name, name) => _;
+          #struct-write(newt, !args, copy) => _;
+          #as-supertype<Term>(newt) => newtt;
+          onSucceed(newtt)
         
         // none matched
         fun onListFinish(ignored) = onFail()
       } in $strategyEvaluatorList(copy, strat, onListSucceed, onListFail, onListFinish)
       
     // implementation of all(x)        
-    fun $strategyAll(onSucceed, onFail, term, strat) =
-      #record-read(term, "type") => type;
+    fun $strategyAll<*, *, Term, *>(onSucceed, onFail, term, strat) =
+      #struct-read(term, !type) => type;
       if #str-eq(type, "LIST") then
+        #as-subtype<ListTerm>(term) => term;
         $strategyAllList(onSucceed, onFail, term, strat)
       else
         if #str-eq(type, "CONS") then
+          #as-subtype<ConsTerm>(term) => term;
           $strategyAllCons(onSucceed, onFail, term, strat)
         else
           onSucceed(term)
           
     // all(x) for lists
-    fun $strategyAllList(onSucceed, onFail, term, strat) =
-      #record-read(term, "elements") => els;
+    fun $strategyAllList<*, *, ListTerm, *>(onSucceed, onFail, term, strat) =
+      #struct-read(term, !elements) => els;
       #array-new() => tmp0;
       #array-concat(els, tmp0) => copy;
       fix {
@@ -224,14 +259,17 @@ rules
         
         // once done, succeed
         fun onListFinish(ignored) = 
-          #record-new("type", "LIST", "elements", copy) => newt;
-          onSucceed(newt)
+          #struct-new<ListTerm>() => newt;
+          #struct-write(newt, !type, "LIST") => _;
+          #struct-write(newt, !elements, copy) => _;
+          #as-supertype<Term>(newt) => newtt;
+          onSucceed(newtt)
       } in $strategyEvaluatorList(copy, strat, onListSucceed, onListFail, onListFinish)
       
     // all(x) for constructors
-    fun $strategyAllCons(onSucceed, onFail, term, strat) =
-      #record-read(term, "args") => els;
-      #record-read(term, "name") => name;
+    fun $strategyAllCons<*, *, ConsTerm, *>(onSucceed, onFail, term, strat) =
+      #struct-read(term, !args) => els;
+      #struct-read(term, !name) => name;
       #array-new() => tmp0;
       #array-concat(els, tmp0) => copy;
       fix {
@@ -243,55 +281,73 @@ rules
         
         // once done, succeed
         fun onListFinish(ignored) = 
-          #record-new("type", "CONS", "name", name, "args", copy) => newt;
-          onSucceed(newt)
+          #struct-new<ConsTerm>() => newt;
+          #struct-write(newt, !type, "CONS") => _;
+          #struct-write(newt, !name, name) => _;
+          #struct-write(newt, !args, copy) => _;
+          #as-supertype<Term>(newt) => newtt;
+          onSucceed(newtt)
       } in $strategyEvaluatorList(copy, strat, onListSucceed, onListFail, onListFinish)
   } in hole
   
   primitive :: () -> Pluggable
   primitive() = @fix {
-    fun PRIM_is_type(onSuccess, onFail, term, type) =
-      #record-read(term, "type") => termt;
-      #record-read(type, "value") => typet;
+    fun PRIM_is_type<*, *, Term, Term>(onSuccess, onFail, term, type) =
+      #struct-read(term, !type) => termt;
+      #as-subtype<StringTerm>(type) => type;
+      #struct-read(type, !value) => typet;
       if #str-eq(termt, typet) then
         onSuccess(term)
       else
         onFail()
-    fun PRIM_prints(onSuccess, onFail, term) =
-      #record-read(term, "type") => termt;
+    fun PRIM_prints<*, *, Term>(onSuccess, onFail, term) =
+      #struct-read(term, !type) => termt;
       if #str-eq(termt, "STRING") then
-        #record-read(term, "value") => val;
+        #as-subtype<StringTerm>(term) => term;
+        #struct-read(term, !value) => val;
         #print(val) => tmp0;
         onSuccess(term)
       else
         onFail()
-    fun PRIM_addi(onSuccess, onFail, term) =
-      #record-read(term, "args") => args;
-      #array-read(args, 0) => i0t;
-      #record-read(i0t, "value") => i0;
-      #array-read(args, 1) => i1t;
-      #record-read(i1t, "value") => i1;
+    fun PRIM_addi<*, *, Term>(onSuccess, onFail, term) =
+      #as-subtype<ConsTerm>(term) => term;
+      #struct-read(term, !args) => args;
+      #array-read<IntTerm>(args, 0) => i0t;
+      #struct-read(i0t, !value) => i0;
+      #array-read<IntTerm>(args, 1) => i1t;
+      #struct-read(i1t, !value) => i1;
       #int-add(i0, i1) => res;
-      #record-new("type", "INT", "value", res) => out;
-      onSuccess(out)
-    fun PRIM_muli(onSuccess, onFail, term) =
-      #record-read(term, "args") => args;
-      #array-read(args, 0) => i0t;
-      #record-read(i0t, "value") => i0;
-      #array-read(args, 1) => i1t;
-      #record-read(i1t, "value") => i1;
+      #struct-new<IntTerm>() => out;
+      #struct-write(out, !type, "INT") => _;
+      #struct-write(out, !value, res) => _;
+      #as-supertype<Term>(out) => outt;
+      onSuccess(outt)
+    fun PRIM_muli<*, *, Term>(onSuccess, onFail, term) =
+      #as-subtype<ConsTerm>(term) => term;
+      #struct-read(term, !args) => args;
+      #array-read<IntTerm>(args, 0) => i0t;
+      #struct-read(i0t, !value) => i0;
+      #array-read<IntTerm>(args, 1) => i1t;
+      #struct-read(i1t, !value) => i1;
       #int-mul(i0, i1) => res;
-      #record-new("type", "INT", "value", res) => out;
-      onSuccess(out)
-    fun PRIM_concat(onSuccess, onFail, term) =
-      #record-read(term, "args") => args;
-      #array-read(args, 0) => i0t;
-      #record-read(i0t, "value") => i0;
-      #array-read(args, 1) => i1t;
-      #record-read(i1t, "value") => i1;
+      #struct-new<IntTerm>() => out;
+      #struct-write(out, !type, "INT") => _;
+      #struct-write(out, !value, res) => _;
+      #as-supertype<Term>(out) => outt;
+      onSuccess(outt)
+    fun PRIM_concat<*, *, Term>(onSuccess, onFail, term) =
+      #as-subtype<ConsTerm>(term) => term;
+      #struct-read(term, !args) => args;
+      #array-read<StringTerm>(args, 0) => i0t;
+      #struct-read(i0t, !value) => i0;
+      #array-read<StringTerm>(args, 1) => i1t;
+      #struct-read(i1t, !value) => i1;
       #str-add(i0, i1) => res;
-      #record-new("type", "STRING", "value", res) => out;
-      onSuccess(out)
+      #struct-new<StringTerm>() => out;
+      #struct-write(out, !type, "STRING") => _;
+      #struct-write(out, !value, res) => _;
+      #as-supertype<Term>(out) => outt;
+      onSuccess(outt)
   } in hole
 
 rules

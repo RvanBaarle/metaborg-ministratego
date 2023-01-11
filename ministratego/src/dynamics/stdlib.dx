@@ -32,6 +32,12 @@ signature
     value #record-read(@cval, @cval)
     value #record-write(@cval, @cval, @cval)
     
+    value #struct-new()
+    value #struct-read(@cval, @cval)
+    value #struct-write(@cval, @cval, @cval)
+    value #as-supertype(@cval)
+    value #as-subtype(@cval)
+
     value #ref-new(@cval)
     value #ref-fetch(@cval)
     value #ref-store(@cval, @cval)

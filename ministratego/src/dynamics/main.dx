@@ -6,6 +6,7 @@ imports
   
   dynamics/strategies
   dynamics/data
+  dynamics/scope
   
 constraint-analyzer
   property refType :: 'string
@@ -13,19 +14,25 @@ constraint-analyzer
 rules
   $succeed :: Pluggable(@cval) // (term: Term)
   $fail :: Pluggable(@cval) // ()
+  $frame :: @cval
+  $frameT :: @ctype
 
   compileModule :: 'Module -> Pluggable
   compileModule(Module(_, decls)) = {
     builtins()
     primitive()
+    frameT <- compileFrameType(fresh-typevar(frame), [], [])
+    frame <- #struct-new<frameT>()
+    with $frame = frame, $frameT = frameT do {
+      declFuns <- compileDecls(decls)
+      fix { declFuns }
     
-    fix { compileDecls(decls) }
-    
-    term <- termStr(str('""))
-    var('"main")@([var('"$toplevelSucceed"), var('"$toplevelFail"), term])
+      term <- termStr(str('""))
+      var('"main")@([var('"$toplevelSucceed"), var('"$toplevelFail"), term])
+    }
   }
   
-  compileDecls :: List('Decl) -> List(@cfun)
+  compileDecls :: List('Decl) -> Pluggable(List(@cfun))
   compileDecls([]) = []
   compileDecls([Strategies(strats)|rest]) = {
     defs <- compileStrategyDefs(strats)

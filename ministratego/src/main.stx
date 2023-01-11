@@ -23,9 +23,23 @@ rules
     
   // resolve var to the given ID
   resolveVar : scope * ID -> TYPE
-  resolveVar(s, x) = T :- {x'}
-    lookupVar(s, x) == [(_, (x', T))|_] | error $[Undefined variable [x].]@x,
-    @x.ref := x'.
+  resolveVar(s, x) = T :- {x' p}
+    lookupVar(s, x) == [(p, (x', T))|_] | error $[Undefined variable [x].]@x,
+    @x.ref := x',
+    @x.path := p.
+
+  resolveVars : scope -> list(ID)
+  resolveVars(s) = xs :- {ps}
+    query type
+      filter (P | A)* and true
+        min and false
+          in s |-> ps,
+    xs == filterVars(ps).
+  
+  filterVars : list((path * (ID * TYPE))) -> list(ID)
+  filterVars([(_, (x, TERM()))|t]) = [x|filterVars(t)].
+  filterVars([_|t]) = filterVars(t).
+  filterVars([]) = [].
     
   declareVarNonDuplicate : scope * ID * TYPE
   declareVarNonDuplicate(s, x, T) :- {ps}
@@ -40,9 +54,10 @@ rules
     resolveOrDeclareTermVarHelp(s, x, ps) == s'.
     
   resolveOrDeclareTermVarHelp : scope * ID * list((path * (ID * TYPE))) -> scope
-  resolveOrDeclareTermVarHelp(s, x, [(_, (x', T))|_]) = s :-
+  resolveOrDeclareTermVarHelp(s, x, [(p, (x', T))|_]) = s :-
     @x.ref := x',
     @x.refType := "ref",
+    @x.path := p,
     try { T == TERM() } | error $[[x] is already bound to a strategy.].
   resolveOrDeclareTermVarHelp(s, x, []) = s' :-
     new s', s' -P-> s, !type[x, TERM()] in s',
@@ -59,13 +74,14 @@ rules
   defOk : scope * Def
   defsOk maps defOk(*, list(*))
   
-  defOk(s, StrategyDef2Def(def@SDefT(name, strategyArgs, termArgs, body))) :- {argS bodyS s'}
+  defOk(s, StrategyDef2Def(def@SDefT(name, strategyArgs, termArgs, body))) :- {argS bodyS s' vars}
     new argS, argS -G-> s,
     new bodyS, bodyS -A-> argS,
     declareVarNonDuplicate(s, name, STRATEGY()),
     declareVarsNonDuplicate(argS, strategyArgs, STRATEGY()),
     declareVarsNonDuplicate(argS, termArgs, TERM()),
-    strategyOk(bodyS, body) == s'.
+    strategyOk(bodyS, body) == s',
+    @def.vars := resolveVars(s').
   
 rules
   strategyOk : scope * Strategy -> scope
@@ -75,17 +91,22 @@ rules
   strategyOk(s, Match(t)) = matchOk(s, t).
   strategyOk(s, Build(t)) = s :- buildOk(s, t).
   strategyOk(s, Seq(a, b)) = strategyOk(strategyOk(s, a), b).
-  strategyOk(s, GuardedLChoice(a, b, c)) = s :- {s1 s2}
-    strategyOk(s, a) == s1,
-    strategyOk(s1, b) == _,
-    strategyOk(s, c) == _.
+  strategyOk(s, g@GuardedLChoice(a, b, c)) = s :- {s' s1' s1 s2 s3}
+    new s', s' -G-> s,
+    new s1', s1' -G-> s1,
+    strategyOk(s', a) == s1,
+    strategyOk(s1', b) == s2,
+    strategyOk(s', c) == s3,
+    @a.vars := resolveVars(s1),
+    @b.vars := resolveVars(s2),
+    @c.vars := resolveVars(s3).
   strategyOk(s, PrimT(_, strats, terms)) = s :-
     strategiesOk(s, strats) == _, 
     buildsOk(s, terms).
   strategyOk(s, Some(x)) = strategyOk(s, x).
   strategyOk(s, One(x)) = strategyOk(s, x).
   strategyOk(s, All(x)) = strategyOk(s, x).
-  strategyOk(s, Let(defs, body)) = strategyOk(s', body) :-
+  strategyOk(s, l@Let(defs, body)) = strategyOk(s', body) :-
     new s',
     s' -P-> s,
     defsOk(s', defs).

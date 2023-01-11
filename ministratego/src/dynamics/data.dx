@@ -8,35 +8,43 @@ imports
 // term representation
 rules
   termStr :: @cval -> Pluggable(@cval)
-  termStr(x) = #record-new([
-    str('"type"), str('"STRING"),
-    str('"value"), x
-  ])
+  termStr(x) = {
+    t <- #struct-new<typevar('"StringTerm")>()
+    #struct-write(t, symbol('"type"), str('"STRING"))
+    #struct-write(t, symbol('"value"), x)
+    #as-supertype<typevar('"Term")>(t)
+  }
   
   termInt :: @cval -> Pluggable(@cval)
-  termInt(x) = #record-new([
-    str('"type"), str('"INT"),
-    str('"value"), x
-  ])
+  termInt(x) = {
+    t <- #struct-new<typevar('"IntTerm")>()
+    #struct-write(t, symbol('"type"), str('"INT"))
+    #struct-write(t, symbol('"value"), x)
+    #as-supertype<typevar('"Term")>(t)
+  }
   
   termCons :: @cval * @cval -> Pluggable(@cval)
-  termCons(name, args) = #record-new([
-    str('"type"), str('"CONS"),
-    str('"name"), name,
-    str('"args"), args
-  ])
+  termCons(name, args) = {
+    t <- #struct-new<typevar('"ConsTerm")>()
+    #struct-write(t, symbol('"type"), str('"CONS"))
+    #struct-write(t, symbol('"name"), name)
+    #struct-write(t, symbol('"args"), args)
+    #as-supertype<typevar('"Term")>(t)
+  }
   
   termList :: @cval -> Pluggable(@cval)
-  termList(els) = #record-new([
-    str('"type"), str('"LIST"),
-    str('"elements"), els
-  ])
+  termList(els) = {
+    t <- #struct-new<typevar('"ListTerm")>()
+    #struct-write(t, symbol('"type"), str('"LIST"))
+    #struct-write(t, symbol('"elements"), els)
+    #as-supertype<typevar('"Term")>(t)
+  }
   
 // conditionals
 rules
   isType :: 'string * @cval * @cval * @cval -> @cexp
   isType(ty, val, ifTrue, ifFalse) = {
-    type <- #record-read(val, str('"type"))
+    type <- #struct-read(val, symbol('"type"))
     if #str-eq(type, str(ty)) then {
       ifTrue@([])
     } else {
@@ -56,7 +64,8 @@ rules
   isTermConsWithName :: @cval * @cval * @cval * @cval -> @cexp
   isTermConsWithName(val, name, ifTrue, ifFalse) = {
     isTermCons(val, after, ifFalse) label after/0:
-    cons <- #record-read(val, str('"name"))
+    valt <- #as-subtype<typevar('"ConsTerm")>(val)
+    cons <- #struct-read(valt, symbol('"name"))
     if #str-eq(cons, name) then { 
       ifTrue@([])
     } else {
